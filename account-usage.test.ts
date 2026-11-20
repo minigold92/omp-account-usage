@@ -34,6 +34,8 @@ describe("pickLimit", () => {
 
 	test("falls back to the longest window, then to tiered meters when that is all there is", () => {
 		expect(pickLimit([limit("5h", 0.9), limit("monthly", 0.4)])?.fraction).toBe(0.4);
+		// Kimi names its monthly windows `limit_month_total` / `limit_month_code` with no duration.
+		expect(pickLimit([limit("5h", 0.9), limit("limit_month_total", 0.4)])?.fraction).toBe(0.4);
 		expect(pickLimit([limit("quota", 0.2, { tier: "Flash" }), limit("quota", 0.6, { tier: "Pro" })])?.fraction).toBe(
 			0.6,
 		);
@@ -54,6 +56,22 @@ describe("accountNames", () => {
 		expect(accountNames(reports(["a@one.com", "a@two.com"]))).toEqual(["a@one.com", "a@two.com"]);
 		expect(accountNames(reports([undefined]))).toEqual([""]);
 		expect(accountNames(reports([undefined, undefined]))).toEqual(["#1", "#2"]);
+		const sameSeat = (orgId: string): Report => ({ provider: "x", limits: [], metadata: { email: "a@x.com", orgId } });
+		expect(accountNames([sameSeat("org-123456-a"), sameSeat("org-123456-b")])).toEqual([
+			"a@x.com (org-12) #1",
+			"a@x.com (org-12) #2",
+		]);
+	});
+});
+
+describe("rows", () => {
+	test("labels rolling regen/tick countdowns and keeps a negative fraction from breaking the gauge", () => {
+		const regen: Limit = {
+			window: { id: "7d", durationMs: 7 * DAY, resetsAt: NOW + 3 * HOUR, resetLabel: "regen" },
+			amount: { usedFraction: -0.5 },
+		};
+		const rows = buildRows([{ provider: "synthetic", limits: [regen] }], () => undefined, NOW);
+		expect(renderRows(rows, 200, plain)).toEqual([" Synthetic ━━━━━━ -50% regen 3h"]);
 	});
 });
 

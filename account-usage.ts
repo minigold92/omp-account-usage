@@ -46,7 +46,7 @@ export interface Identity {
 
 export interface Limit {
 	scope?: { windowId?: string; tier?: string; modelId?: string; accountId?: string; projectId?: string };
-	window?: { id?: string; durationMs?: number; resetsAt?: number };
+	window?: { id?: string; durationMs?: number; resetsAt?: number; resetLabel?: string };
 	amount?: {
 		used?: number;
 		limit?: number;
@@ -154,23 +154,23 @@ const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 const WEEK_MS = 7 * DAY_MS;
 const MONTH_MS = 30 * DAY_MS;
-const NAMED_WINDOWS: Record<string, number> = {
-	daily: DAY_MS,
-	weekly: WEEK_MS,
-	monthly: MONTH_MS,
-	"billing-period": MONTH_MS,
-};
 const UNIT_MS: Record<string, number> = { m: MINUTE_MS, h: HOUR_MS, d: DAY_MS, w: WEEK_MS, mo: MONTH_MS };
 
-/** Window length in ms, from `durationMs` or ids such as `5h`, `7d`, `1w`, `1mo`, `weekly`. */
+/**
+ * Window length in ms, from `durationMs`, ids such as `5h`, `7d`, `1w`, `1mo`, or words in the id
+ * (`weekly`, `daily`, `monthly`, `billing-period`, Kimi's `limit_month_total`).
+ */
 export function windowDuration(limit: Limit): number | undefined {
 	const durationMs = limit.window?.durationMs;
 	if (typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs > 0) return durationMs;
 	const id = norm(limit.window?.id) ?? norm(limit.scope?.windowId);
 	if (!id) return undefined;
-	if (Object.hasOwn(NAMED_WINDOWS, id)) return NAMED_WINDOWS[id];
 	const match = /^(\d+)\s*(mo|m|h|d|w)$/.exec(id);
-	return match ? Number(match[1]) * UNIT_MS[match[2]] : undefined;
+	if (match) return Number(match[1]) * UNIT_MS[match[2]];
+	if (/month|billing/.test(id)) return MONTH_MS;
+	if (/week/.test(id)) return WEEK_MS;
+	if (/day|daily/.test(id)) return DAY_MS;
+	return undefined;
 }
 
 /** The weekly window first, then longer windows, then shorter ones, then windows of unknown length. */
@@ -206,8 +206,9 @@ function text(value: unknown): string | undefined {
 
 /**
  * Short names for one provider's reports: the part of the email before `@`, the whole email when two
- * accounts share that part, and a short org or account id after it when the emails match too.
- * An account with neither email nor id is unnamed when it is the only one, else numbered.
+ * accounts share that part, a short org or account id after it when the emails match too, and a
+ * number when even that collides. An account with neither email nor id is unnamed when it is the only
+ * one, else numbered.
  */
 export function accountNames(reports: Report[]): string[] {
 	const emails = reports.map(report => text(report.metadata?.email));
@@ -216,11 +217,12 @@ export function accountNames(reports: Report[]): string[] {
 		(email, i) => email?.split("@")[0] ?? ids[i]?.slice(0, 8) ?? (reports.length > 1 ? `#${i + 1}` : ""),
 	);
 	const full = local.map((name, i) => (repeated(local, i) ? (emails[i] ?? name) : name));
-	return full.map((name, i) => {
+	const qualified = full.map((name, i) => {
 		if (!repeated(full, i)) return name;
 		const qualifier = text(reports[i].metadata?.orgId) ?? ids[i];
 		return qualifier ? `${name} (${qualifier.slice(0, 6)})` : name;
 	});
+	return qualified.map((name, i) => (repeated(qualified, i) ? `${name} #${i + 1}` : name));
 }
 
 function repeated(names: string[], i: number): boolean {
@@ -238,10 +240,12 @@ function formatReset(resetsAt: number | undefined, now: number): string {
 
 function toRow(report: Report, name: string, identity: Identity | undefined, now: number): AccountRow {
 	const picked = pickLimit(report.limits);
-	const usage = picked && {
-		percent: picked.fraction * 100,
-		reset: formatReset(picked.limit.window?.resetsAt, now),
-	};
+	const window = picked?.limit.window;
+	const countdown = formatReset(window?.resetsAt, now);
+	// Rolling windows (Synthetic, Umans) report the next regen/tick step, not a full reset.
+	const reset =
+		countdown && window?.resetLabel && window.resetLabel !== "resets" ? `${window.resetLabel} ${countdown}` : countdown;
+	const usage = picked && { percent: picked.fraction * 100, reset };
 	const provider = PROVIDER_LABELS[report.provider] ?? report.provider;
 	return { provider, active: isActive(report, identity), name, usage };
 }
@@ -285,7 +289,7 @@ export function renderRows(rows: AccountRow[], width: number, theme: WidgetTheme
 				if (!usage) return;
 				const color: Color = usage.percent >= 80 ? "error" : usage.percent >= 50 ? "warning" : "success";
 				if (gaugeWidth) {
-					const filled = Math.min(gaugeWidth, Math.ceil((usage.percent / 100) * gaugeWidth));
+					const filled = Math.min(gaugeWidth, Math.max(0, Math.ceil((usage.percent / 100) * gaugeWidth)));
 					push(" ");
 					push("━".repeat(filled), color);
 					push("━".repeat(gaugeWidth - filled), "dim");
@@ -371,6 +375,8 @@ export default function accountUsage(pi: ExtensionAPI): void {
 				(await authStorage.usage.reports({
 					baseUrlResolver: provider => current.modelRegistry.getProviderBaseUrl?.(provider),
 				})) ?? [];
+			// The session may have ended or switched while the reports loaded; its own refresh takes over.
+			if (ctx !== current) return;
 			const sessionId = current.sessionManager.getSessionId();
 			const rows = buildRows(reports, provider => authStorage.oauth.identity(provider, sessionId), Date.now());
 			if (rows.length === 0) {
