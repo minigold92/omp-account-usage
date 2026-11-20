@@ -14,26 +14,27 @@ omp plugin install github:minigold92/omp-account-usage
 
 Then restart omp. The line appears as soon as omp has usage data for at least one signed-in account.
 
-| | |
-| --- | --- |
-| Update | `omp plugin upgrade omp-account-usage` |
-| Remove | `omp plugin uninstall omp-account-usage` |
-| Try without installing | `omp -e /path/to/account-usage.ts` |
+```sh
+omp plugin upgrade omp-account-usage     # update
+omp plugin uninstall omp-account-usage   # remove
+omp -e /path/to/account-usage.ts         # try a local copy without installing
+```
 
 Already copied `account-usage.ts` into `~/.omp/agent/extensions/`? Delete that copy first; two copies draw the same widget and overwrite each other.
 
 ## Reading the line
 
-```
-Claude alice ━━━━━━ 24% 4d2h · bob ━━━━━━ 62% 3d17h │ Codex carol ━━━━━━ 26% 4d18h
-  │      │     │     │   └─ time until the window resets
-  │      │     │     └─ percent used
-  │      │     └─ gauge
-  │      └─ account
-  └─ provider
-```
+Each account reads as `alice ━━━━━━ 24% 4d2h`:
 
-- **Provider groups** are separated by `│`; accounts within a provider by `·`.
+| Part | Example | Meaning |
+| --- | --- | --- |
+| Provider | `Claude` | starts each group; groups are separated by `│` |
+| Account | `alice` | accounts of the same provider are separated by `·` |
+| Gauge | `━━━━━━` | filled share in the usage color |
+| Percent | `24%` | used share of the limit |
+| Reset | `4d2h` | time until the limit window resets |
+
+- **Provider groups** keep a fixed order: Claude, Codex, Copilot, Cursor, Gemini, …, then other providers by id.
 - **The account this session is using comes first** in its group in normal text; the provider's other accounts are dimmed.
 - **Colors:** green below 50%, yellow below 80%, red from 80% (over 100% means overage).
 - **Account names** are the part of your login email before `@`; if two accounts share it, the full email; if that still matches (team seats), a short org id is added.
