@@ -1,0 +1,19 @@
+{
+	"name": "omp-account-usage",
+	"version": "0.1.0",
+	"description": "omp widget showing subscription usage for every logged-in account (Claude, Codex, Copilot, Cursor, Gemini, ...)",
+	"license": "MIT",
+	"type": "module",
+	"keywords": ["omp", "oh-my-pi", "omp-plugin", "omp-extension", "usage"],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/minigold92/omp-account-usage.git"
+	},
+	"files": ["account-usage.ts", "README.md", "LICENSE", "NOTICE"],
+	"scripts": {
+		"test": "bun test"
+	},
+	"omp": {
+		"extensions": ["./account-usage.ts"]
+	}
+}
