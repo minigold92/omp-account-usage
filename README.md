@@ -1,16 +1,10 @@
 # omp-account-usage
 
-An [oh-my-pi (omp)](https://github.com/can1357/oh-my-pi) extension that puts the subscription usage of **every** logged-in account with a usage limit on one line above the editor:
+See how much of every AI subscription you have left, for every account, without leaving [oh-my-pi (omp)](https://github.com/can1357/oh-my-pi).
 
-```
- Claude alice ━━━━━━ 24% 4d2h · bob ━━━━━━ 22% 3d17h │ Codex carol ━━━━━━ 26% 4d18h │ Copilot dave ━━━━━━ 40% 12d
-```
+![The widget above the omp editor: Claude with two accounts, Codex, and Copilot, each with a gauge, percent used, and time to reset](docs/widget.svg)
 
-omp's built-in `usage` status-line segment shows only the account behind the current model. This widget shows all of them:
-
-- one group per provider, with the account the current session uses first and the others dimmed
-- per account: a gauge, the percent used (green < 50%, yellow < 80%, red above), and the time until the window resets (`regen`/`tick` for rolling windows that refill step by step)
-- one line when it fits; otherwise one line per provider, then shorter gauges, then truncation
+omp's built-in `usage` status-line segment shows only the account behind the current model. If you juggle two Claude Max accounts, a ChatGPT plan for Codex, and Copilot at work, you have to run `/usage` to see the rest. This extension keeps all of them on one line above the editor.
 
 ## Install
 
@@ -18,47 +12,99 @@ omp's built-in `usage` status-line segment shows only the account behind the cur
 omp plugin install github:minigold92/omp-account-usage
 ```
 
-Restart omp. Update with `omp plugin upgrade omp-account-usage`; remove with `omp plugin uninstall omp-account-usage`.
+Then restart omp. The line appears as soon as omp has usage data for at least one signed-in account.
 
-If you already have a copy of `account-usage.ts` in `~/.omp/agent/extensions/` (or load it with `-e`), remove it first: both copies draw the same widget and overwrite each other.
-
-To try it without installing: `omp -e /path/to/account-usage.ts`.
-
-## Which number it shows
-
-omp already turns each provider's usage into the same shape (windows, used fraction, reset time), so the widget works for any provider omp reports a percentage-style limit for. Per account it shows one window:
-
-1. the weekly window, if there is one
-2. otherwise the longest window (monthly, billing period, …), then shorter ones
-3. the most used limit when several share that window
-
-Per-model and per-tier meters (Claude Opus, Codex Spark, Copilot per-model) are skipped unless the account has nothing else. Run `/usage` in omp for every window.
-
-Known providers get short labels (Claude, Codex, Copilot, Cursor, Gemini, Grok, …). Any other provider shows its omp provider id.
-
-Accounts without a limit that can be shown as a percentage are left out, e.g. balance-only plans (Charm Hyper) and providers that report no limits (local Ollama).
-
-## Tested
-
-| What | How |
+| | |
 | --- | --- |
-| Claude (2 accounts), Codex (1 account) | real accounts, omp 19.0.1 |
-| Window choice, names, rendering for other report shapes (monthly, `1w`, Kimi's monthly ids, tiered-only quotas, regen countdowns) | unit tests with hand-made reports modelled on omp's usage reporters; not run against real accounts |
+| Update | `omp plugin upgrade omp-account-usage` |
+| Remove | `omp plugin uninstall omp-account-usage` |
+| Try without installing | `omp -e /path/to/account-usage.ts` |
 
-If a provider shows the wrong number or nothing at all, please [open an issue](https://github.com/minigold92/omp-account-usage/issues) with your omp version and the matching part of `/usage` (mask emails).
+Already copied `account-usage.ts` into `~/.omp/agent/extensions/`? Delete that copy first; two copies draw the same widget and overwrite each other.
 
-## Notes
+## Reading the line
 
-- Reads omp's own usage cache through an internal API (`authStorage.usage` / `authStorage.oauth`) that is not in the public extension typings. If an omp release drops it, the widget turns itself off with one warning instead of erroring.
-- Makes no network requests of its own and stores nothing; account names come from your local omp login.
-- Refreshes every 15 seconds and after every turn.
+```
+Claude alice ━━━━━━ 24% 4d2h · bob ━━━━━━ 62% 3d17h │ Codex carol ━━━━━━ 26% 4d18h
+  │      │     │     │   └─ time until the window resets
+  │      │     │     └─ percent used
+  │      │     └─ gauge
+  │      └─ account
+  └─ provider
+```
+
+- **Provider groups** are separated by `│`; accounts within a provider by `·`.
+- **The account this session is using comes first** in its group in normal text; the provider's other accounts are dimmed.
+- **Colors:** green below 50%, yellow below 80%, red from 80% (over 100% means overage).
+- **Account names** are the part of your login email before `@`; if two accounts share it, the full email; if that still matches (team seats), a short org id is added.
+- **Rolling windows** that refill step by step (Synthetic, Umans) show `regen 3h` or `tick 20m` instead of a plain reset time.
+- **Narrow terminals:** one line per provider, then shorter gauges, then the line is cut with `…`.
+
+## Which limit it shows
+
+Every provider has several limits (5-hour, weekly, monthly, per model, …). The widget shows one per account:
+
+1. the **weekly** window, if the account has one;
+2. otherwise the **longest** window (monthly, billing period, …), then shorter ones;
+3. among limits on the same window, the **most used** one.
+
+Per-model and per-tier meters (Claude Opus, Codex Spark, Copilot per model) count only when an account has nothing else. Run `/usage` in omp to see every limit.
+
+## Supported providers
+
+omp fetches usage from each provider and converts it into one common format; this extension only reads that. Any provider omp reports a percentage-style limit for shows up, including ones added in future omp releases (they appear under their omp provider id).
+
+| Shown as | omp provider id | Checked with a live account |
+| --- | --- | --- |
+| Claude | `anthropic` | ✅ |
+| Codex | `openai-codex` | ✅ |
+| Copilot | `github-copilot` | not yet |
+| Cursor | `cursor` | not yet |
+| Gemini | `google-gemini-cli` | not yet |
+| Antigravity | `google-antigravity` | not yet |
+| Grok | `xai-oauth` | not yet |
+| Kimi | `kimi-code` | not yet |
+| Z.ai | `zai` | not yet |
+| MiniMax | `minimax-code` | not yet |
+| Alibaba | `alibaba-token-plan` | not yet |
+| OpenCode Go | `opencode-go` | not yet |
+| Droid | `factory-droid` | not yet |
+| Devin | `devin` | not yet |
+| Synthetic | `synthetic` | not yet |
+| Umans | `umans` | not yet |
+
+Live checks: omp 19.0.1 with two Claude accounts and one Codex account. The other providers have not been run against a live account; the report shapes they send (monthly and `1w` windows, Kimi's monthly ids, tier-only quotas, regen/tick countdowns) are covered by unit tests with hand-made reports modelled on omp's usage reporters.
+
+Not shown: accounts whose plan has no percentage-style limit, such as balance-only plans (Charm Hyper) or local Ollama, which reports no limits.
+
+**Something looks wrong for your provider?** Please [open an issue](https://github.com/minigold92/omp-account-usage/issues) with your omp version (`omp --version`) and the matching part of `/usage` (mask your email).
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+| --- | --- |
+| Nothing above the editor | omp has no usage data yet. Run `/usage`; if it shows nothing either, sign in with `/login`. The widget also stays hidden in non-interactive runs (`omp -p`). |
+| Warning: "this omp build has no AuthStorage usage API" | Your omp version does not expose the internal API this extension reads. Update omp or open an issue with your version. |
+| The line flickers between two versions | Two copies are loaded. Remove the one in `~/.omp/agent/extensions/` or the extra `-e`. |
+| A provider is missing | It has no percentage-style limit, or omp does not report usage for it. Check `/usage`. |
+
+## How it works
+
+- Reads omp's own usage cache through `authStorage.usage` and `authStorage.oauth`. These are internal omp APIs, not part of the public extension typings, so a future omp release could change them; if they disappear, the widget turns itself off with one warning instead of erroring.
+- Refreshes every 15 seconds and after every turn. omp caches provider usage for about 5 minutes and shares concurrent requests, so the refresh mostly reads that cache.
+- Sends nothing anywhere and stores nothing. Account names come from your local omp login.
 
 ## Development
 
 ```sh
+git clone https://github.com/minigold92/omp-account-usage
+cd omp-account-usage
 bun test
+omp -e ./account-usage.ts   # try your changes (remove any installed copy first)
 ```
+
+Everything lives in `account-usage.ts`; `account-usage.test.ts` covers window choice, account names, and rendering.
 
 ## License
 
-MIT. Includes code adapted from oh-my-pi (MIT); see [NOTICE](NOTICE).
+[MIT](LICENSE). Includes code adapted from oh-my-pi (MIT); see [NOTICE](NOTICE).
